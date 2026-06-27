@@ -1,0 +1,33 @@
+-- STATE: Flee
+ai:AddState("Flee", {
+    OnEnter = function(self)
+        self:DebugPrintState()
+        self.FleePoint = self.RootPart.Position + Vector3.new(
+            math.random(-40, 40),
+            0,
+            math.random(-40, 40)
+        )
+        self:MoveTo(self.FleePoint)
+    end,
+
+    OnExit = function(self)
+        -- nothing special
+    end,
+
+    OnUpdate = function(self, dt)
+        local humanoid = self.Humanoid
+        if humanoid.Health <= 0 then
+            return
+        end
+
+        -- If reached flee point, return to Idle
+        if (self.RootPart.Position - self.FleePoint).Magnitude < 5 then
+            self:SetTarget(nil)
+            self:SetState("Idle")
+            return
+        end
+
+        -- Keep moving toward flee point
+        self:MoveTo(self.FleePoint)
+    end,
+})
