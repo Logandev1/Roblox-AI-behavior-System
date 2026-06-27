@@ -1,0 +1,5 @@
+local humanoid = self.Humanoid
+if humanoid and humanoid.Health < 20 then
+    self:SetState("Flee")
+    return
+end
