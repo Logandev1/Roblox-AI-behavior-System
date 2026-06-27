@@ -1,0 +1,170 @@
+-- AIBehaviorSystem
+-- Modular AI state machine for NPCs
+
+local AIBehaviorSystem = {}
+AIBehaviorSystem.__index = AIBehaviorSystem
+
+-- Utility functions
+local function distance(a, b)
+    if not a or not b then return math.huge end
+    return (a - b).Magnitude
+end
+
+local function hasLineOfSight(originPart, targetPart)
+    if not originPart or not targetPart then return false end
+
+    local origin = originPart.Position
+    local target = targetPart.Position
+    local direction = (target - origin)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {originPart.Parent}
+
+    local result = workspace:Raycast(origin, direction, raycastParams)
+    if result and result.Instance then
+        -- If we hit the target or something attached to it, we consider LOS
+        return result.Instance:IsDescendantOf(targetPart.Parent)
+    end
+
+    return false
+end
+
+-- State object
+local State = {}
+State.__index = State
+
+function State.new(name, config)
+    local self = setmetatable({}, State)
+    self.Name = name
+    self.OnEnter = config.OnEnter
+    self.OnExit = config.OnExit
+    self.OnUpdate = config.OnUpdate
+    return self
+end
+
+-- AI Controller
+function AIBehaviorSystem.new(npcModel, config)
+    local self = setmetatable({}, AIBehaviorSystem)
+
+    self.NPC = npcModel
+    self.Humanoid = npcModel:FindFirstChildOfClass("Humanoid")
+    self.RootPart = npcModel:FindFirstChild("HumanoidRootPart")
+
+    self.States = {}
+    self.CurrentState = nil
+    self.LastState = nil
+
+    self.Target = nil
+    self.Config = config or {}
+
+    self.UpdateConnection = nil
+    self.IsRunning = false
+
+    return self
+end
+
+function AIBehaviorSystem:AddState(name, stateConfig)
+    self.States[name] = State.new(name, stateConfig)
+end
+
+function AIBehaviorSystem:SetState(name)
+    local newState = self.States[name]
+    if not newState then
+        warn("AIBehaviorSystem: State '" .. tostring(name) .. "' does not exist.")
+        return
+    end
+
+    if self.CurrentState and self.CurrentState.OnExit then
+        self.CurrentState.OnExit(self)
+    end
+
+    self.LastState = self.CurrentState
+    self.CurrentState = newState
+
+    if self.CurrentState.OnEnter then
+        self.CurrentState.OnEnter(self)
+    end
+end
+
+function AIBehaviorSystem:SetTarget(targetModel)
+    self.Target = targetModel
+end
+
+function AIBehaviorSystem:Start()
+    if self.IsRunning then return end
+    self.IsRunning = true
+
+    self.UpdateConnection = game:GetService("RunService").Heartbeat:Connect(function(dt)
+        self:Update(dt)
+    end)
+end
+
+function AIBehaviorSystem:Stop()
+    self.IsRunning = false
+    if self.UpdateConnection then
+        self.UpdateConnection:Disconnect()
+        self.UpdateConnection = nil
+    end
+end
+
+function AIBehaviorSystem:Update(dt)
+    if not self.CurrentState then return end
+    if self.CurrentState.OnUpdate then
+        self.CurrentState.OnUpdate(self, dt)
+    end
+end
+
+-- Helper: basic movement
+function AIBehaviorSystem:MoveTo(position)
+    if self.Humanoid and position then
+        self.Humanoid:MoveTo(position)
+    end
+end
+
+-- Helper: get target info
+function AIBehaviorSystem:GetTargetRoot()
+    if not self.Target then return nil end
+    return self.Target:FindFirstChild("HumanoidRootPart")
+end
+
+function AIBehaviorSystem:GetTargetHumanoid()
+    if not self.Target then return nil end
+    return self.Target:FindFirstChildOfClass("Humanoid")
+end
+
+function AIBehaviorSystem:GetDistanceToTarget()
+    local targetRoot = self:GetTargetRoot()
+    if not targetRoot or not self.RootPart then return math.huge end
+    return distance(self.RootPart.Position, targetRoot.Position)
+end
+
+function AIBehaviorSystem:HasLineOfSightToTarget()
+    local targetRoot = self:GetTargetRoot()
+    return hasLineOfSight(self.RootPart, targetRoot)
+end
+
+-- Example transition helpers
+function AIBehaviorSystem:ShouldChase()
+    local maxChaseDistance = self.Config.MaxChaseDistance or 80
+    local dist = self:GetDistanceToTarget()
+    return dist < maxChaseDistance and self:HasLineOfSightToTarget()
+end
+
+function AIBehaviorSystem:ShouldAttack()
+    local attackRange = self.Config.AttackRange or 8
+    local dist = self:GetDistanceToTarget()
+    return dist < attackRange
+end
+
+function AIBehaviorSystem:ShouldReturnToPatrol()
+    local maxReturnDistance = self.Config.MaxReturnDistance or 120
+    local dist = self:GetDistanceToTarget()
+    return dist > maxReturnDistance or not self.Target
+end
+
+-- Debug helper
+function AIBehaviorSystem:DebugPrintState()
+    print("[AI] NPC:", self.NPC.Name, "State:", self.CurrentState and self.CurrentState.Name or "None")
+end
+
+return AIBehaviorSystem
