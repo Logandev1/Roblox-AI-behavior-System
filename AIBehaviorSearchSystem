@@ -1,0 +1,33 @@
+-- STATE: Search
+ai:AddState("Search", {
+    OnEnter = function(self)
+        self:DebugPrintState()
+        self.SearchTimer = 0
+        self.SearchDuration = 5 -- seconds
+        self.SearchAngle = 0
+    end,
+
+    OnExit = function(self)
+        self.SearchTimer = 0
+    end,
+
+    OnUpdate = function(self, dt)
+        self.SearchTimer += dt
+
+        -- If target is reacquired, go back to Chase
+        if self.Target and self:HasLineOfSightToTarget() then
+            self:SetState("Chase")
+            return
+        end
+
+        -- Rotate NPC to simulate searching
+        self.SearchAngle += dt * 2
+        self.RootPart.CFrame = self.RootPart.CFrame * CFrame.Angles(0, math.rad(45 * dt), 0)
+
+        -- End search after duration
+        if self.SearchTimer >= self.SearchDuration then
+            self:SetTarget(nil)
+            self:SetState("Patrol")
+        end
+    end,
+})
