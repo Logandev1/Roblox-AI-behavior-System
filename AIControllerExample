@@ -1,0 +1,196 @@
+-- AIControllerExample
+-- Example usage of AIBehaviorSystem
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+
+local AIBehaviorSystem = require(ReplicatedStorage:WaitForChild("AIBehaviorSystem"))
+
+-- CONFIG
+local NPC_NAME = "EnemyNPC" -- name of the NPC model in Workspace
+local PATROL_POINTS_FOLDER = "PatrolPoints" -- folder in Workspace with parts
+
+local npcModel = workspace:WaitForChild(NPC_NAME)
+local patrolFolder = workspace:WaitForChild(PATROL_POINTS_FOLDER)
+
+local patrolPoints = {}
+for _, part in ipairs(patrolFolder:GetChildren()) do
+    if part:IsA("BasePart") then
+        table.insert(patrolPoints, part)
+    end
+end
+
+local ai = AIBehaviorSystem.new(npcModel, {
+    MaxChaseDistance = 80,
+    AttackRange = 8,
+    MaxReturnDistance = 120,
+})
+
+local currentPatrolIndex = 1
+local patrolWaitTime = 2
+local patrolTimer = 0
+
+-- Utility: get nearest player as target
+local function getNearestPlayer()
+    local nearestPlayer = nil
+    local nearestDist = math.huge
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local charRoot = player.Character.HumanoidRootPart
+            local dist = (npcModel.HumanoidRootPart.Position - charRoot.Position).Magnitude
+            if dist < nearestDist then
+                nearestDist = dist
+                nearestPlayer = player
+            end
+        end
+    end
+
+    return nearestPlayer
+end
+
+-- STATE: Idle
+ai:AddState("Idle", {
+    OnEnter = function(self)
+        self.Humanoid:MoveTo(self.RootPart.Position)
+        self:DebugPrintState()
+    end,
+
+    OnExit = function(self)
+        -- nothing special
+    end,
+
+    OnUpdate = function(self, dt)
+        -- Look for a target
+        local nearestPlayer = getNearestPlayer()
+        if nearestPlayer and nearestPlayer.Character then
+            self:SetTarget(nearestPlayer.Character)
+        end
+
+        if self.Target and self:ShouldChase() then
+            self:SetState("Chase")
+        else
+            -- If no target, maybe start patrolling
+            self:SetState("Patrol")
+        end
+    end,
+})
+
+-- STATE: Patrol
+ai:AddState("Patrol", {
+    OnEnter = function(self)
+        self:DebugPrintState()
+        patrolTimer = 0
+        if #patrolPoints > 0 then
+            local point = patrolPoints[currentPatrolIndex]
+            self:MoveTo(point.Position)
+        end
+    end,
+
+    OnExit = function(self)
+        -- reset timer
+        patrolTimer = 0
+    end,
+
+    OnUpdate = function(self, dt)
+        -- Check for target
+        local nearestPlayer = getNearestPlayer()
+        if nearestPlayer and nearestPlayer.Character then
+            self:SetTarget(nearestPlayer.Character)
+        end
+
+        if self.Target and self:ShouldChase() then
+            self:SetState("Chase")
+            return
+        end
+
+        -- Patrol logic
+        if #patrolPoints == 0 then return end
+
+        patrolTimer = patrolTimer + dt
+        if patrolTimer >= patrolWaitTime then
+            patrolTimer = 0
+            currentPatrolIndex = currentPatrolIndex + 1
+            if currentPatrolIndex > #patrolPoints then
+                currentPatrolIndex = 1
+            end
+
+            local nextPoint = patrolPoints[currentPatrolIndex]
+            self:MoveTo(nextPoint.Position)
+        end
+    end,
+})
+
+-- STATE: Chase
+ai:AddState("Chase", {
+    OnEnter = function(self)
+        self:DebugPrintState()
+    end,
+
+    OnExit = function(self)
+        -- stop movement when leaving chase
+        self.Humanoid:MoveTo(self.RootPart.Position)
+    end,
+
+    OnUpdate = function(self, dt)
+        if not self.Target then
+            self:SetState("Patrol")
+            return
+        end
+
+        if self:ShouldAttack() then
+            self:SetState("Attack")
+            return
+        end
+
+        if self:ShouldReturnToPatrol() then
+            self:SetTarget(nil)
+            self:SetState("Patrol")
+            return
+        end
+
+        local targetRoot = self:GetTargetRoot()
+        if targetRoot then
+            self:MoveTo(targetRoot.Position)
+        end
+    end,
+})
+
+-- STATE: Attack
+ai:AddState("Attack", {
+    OnEnter = function(self)
+        self:DebugPrintState()
+        -- Play attack animation or effect here
+        -- Example: damage target
+        local targetHumanoid = self:GetTargetHumanoid()
+        if targetHumanoid then
+            targetHumanoid:TakeDamage(10)
+        end
+    end,
+
+    OnExit = function(self)
+        -- maybe cooldown logic
+    end,
+
+    OnUpdate = function(self, dt)
+        if not self.Target then
+            self:SetState("Patrol")
+            return
+        end
+
+        if not self:ShouldAttack() then
+            self:SetState("Chase")
+            return
+        end
+
+        -- Re-apply damage periodically (simple example)
+        local targetHumanoid = self:GetTargetHumanoid()
+        if targetHumanoid then
+            targetHumanoid:TakeDamage(1)
+        end
+    end,
+})
+
+-- Start in Idle
+ai:SetState("Idle")
+ai:Start()
