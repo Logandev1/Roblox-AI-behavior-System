@@ -55,6 +55,13 @@ Workspace
 
 
 
+## Credits
+### Main Developer
+The main developer and scripter of the ai behavior system is LoganMDumont (Roblox) or loganxa (Discord). 
+
+### Animator
+The animator of the ai behavior system is nick4lifealt (Roblox) or nick4life357 (Discord). 
+
 ---
 
 ## Configuration
@@ -76,4 +83,5 @@ local ai = AIBehaviorSystem.new(npcModel, {
         Flee = "rbxassetid://FLEE_ANIM_ID",
     }
 })
+
 
